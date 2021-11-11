@@ -1,0 +1,205 @@
+---
+title: "Taiwan Covid19 Status"
+output: 
+  flexdashboard::flex_dashboard:
+    logo: C:\Users\quicl\Desktop\sales_analytics\Projects\not_shiny\publish\Crosstalk\Pic.JPG
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+rm(list=ls()) 
+# knitr opts
+knitr::opts_chunk$set(cache = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      error = FALSE,
+                      echo = FALSE,
+                      eval = TRUE
+)
+```
+
+
+```{r load_libries, include=FALSE}
+#remotes::install_github("kent37/summarywidget")
+library(tidyverse)
+library(crosstalk)
+library(flexdashboard)
+library(plotly)
+library(summarywidget)
+library(DT)
+library(leaflet)
+```
+
+
+```{r dataset, include=FALSE}
+
+url <- 'https://od.cdc.gov.tw/eic/Day_Confirmation_Age_County_Gender_19CoV.csv'
+df  <- read.csv(url, encoding="UTF-8", stringsAsFactors=FALSE)
+
+cities <- read.csv('cityx.csv', encoding="UTF-8", stringsAsFactors=FALSE) %>% 
+          mutate(Area = ifelse( Longitude > 121.5, 'E', 
+                        ifelse((Latitude > median(Latitude) & Longitude < 121.5), 'SW','NW')))%>%     
+          group_by(Area) %>%
+          mutate(Area_Latitude = min(Latitude))%>%
+          mutate(Area_Longitude = min(Longitude))
+colnames(cities)[1] <- 'City'
+
+url_cols    <- c('Disease_Name', 'Date', 'City','Town', 'Gender', 'Other_Countries', 'Age', 'No_Cases')
+colnames(df) <- url_cols
+# Left join data
+total <- left_join(df, cities, by = 'City') %>% 
+         filter(as.Date(Date) > as.Date('2021/05/01'))%>% 
+         mutate(No_imported_cases = ifelse(is.na(Latitude) , 1, 0)) %>% 
+         mutate(No_local_cases = ifelse(No_imported_cases != 0, 0, 1))
+rm(df)
+
+```
+
+
+```{r new_data, echo=FALSE}
+
+new_df <- total[,-1] %>%
+          mutate(Gender = ifelse(Gender == Gender[1], 'F', 'M')) %>%
+          mutate(Local = ifelse(Other_Countries == Other_Countries[2], 'Overseas', 'Local'))%>%
+          mutate(Age_Group = ifelse(Age %in% c("70+","65-69"), '65+', ifelse(
+                                    Age %in% c("60-64", "55-59", "50-54"), '50-64',ifelse(
+                                    Age %in% c("45-49", "40-44", "35-39", "30-34", "25-29"), '30-49', ifelse(
+                                    Age %in% c("20-24", "15-19", "10-14"), '10-24','< 10')  
+                                    ))))%>%
+          mutate(idx = 1:length(Date))%>%
+          mutate(Days = weekdays(as.Date(Date)))%>%
+          mutate(City = ifelse(is.na(Latitude), 'Overseas', City))%>%
+
+          mutate(Alert = ifelse((as.Date(Date)> as.Date('2021/05/26')) & 
+                        (as.Date(Date)< as.Date('2021/07/27')), 'Level_3',
+                        ifelse((as.Date(Date)< as.Date('2021/05/01')),'Level_1','Level_2')))
+
+tot_cases <- new_df %>% group_by(Date) %>%
+             mutate(Imported_cases = sum(No_imported_cases))%>%
+             mutate(Local_cases = sum(No_local_cases))%>% 
+             mutate(Mores = ifelse(Local_cases < Imported_cases , 'Imp','Ind'))%>%
+             select(idx,Imported_cases, Local_cases, Date, Mores)
+
+
+new_df     <- left_join(new_df, tot_cases, by = 'idx')%>%
+              mutate(Date = as.Date(Date.x))%>%
+              select(-c(Date.y,Date.x))   
+
+              
+update        <- max(as.Date(new_df$Date))
+update_info   <- new_df[new_df$Date == update,c('Gender', 'Age_Group','No_imported_cases', 'No_local_cases')]
+udate_summary <- c(new_df[nrow(new_df),c('Imported_cases', 'Local_cases')]) 
+
+new_df <- new_df %>% 
+          filter(as.Date(Date) > as.Date('2021/07/04'))%>% 
+          select(Date, Gender, Age_Group, City, Area, Latitude, Longitude, No_local_cases,
+                  No_Cases)
+a       <- as.numeric(udate_summary[1])
+b       <- as.numeric(udate_summary[2])
+
+covid_data1 <- SharedData$new(new_df)
+rm(total, cities, tot_cases, new_df)
+```
+
+
+```{r, echo=FALSE}
+
+scatter <- plot_ly(data = covid_data1, x = ~Date, y = ~No_Cases,name = 'Daily Total Cases', type='bar')
+scatter <- scatter %>% 
+                   add_trace(y = ~No_local_cases,name = 'Indigenous Cases')
+scatter <- scatter %>% layout(title = paste0("Taiwan Daily New Cases, update: ", update),
+      yaxis = list(tickfont = list(color = "blue"),
+      title = "Daily Cases"),
+      xaxis = list(title = "Date"))
+```
+
+Taiwan Covid19 Cases
+=============================================================
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+#### Select Options
+```{r, echo=FALSE}
+filter_slider("idx", "Date Range", covid_data1, ~Date, step=10)
+filter_checkbox("gender", "Genderx", covid_data1, ~Gender, columns = 2)
+filter_checkbox("City", "City", covid_data1, ~City, columns = 2)
+filter_checkbox("Age_Group", "Age Group", covid_data1, ~Age_Group, columns = 2)
+```
+> Data Source:  [Taiwan CDC](https://www.cdc.gov.tw/En)
+
+
+Row1 {data-width="46%"}
+------------------------------------------------------
+
+### Imported_cases
+
+```{r, echo=FALSE}
+gauge(a, min = -1, max = 50,
+  label = update,
+  gaugeSectors(
+  success = c(0,10), 
+  warning = c(11,20), 
+  danger = c(21,50)))
+```
+
+### Indigenous_cases
+
+```{r, echo=FALSE}
+gauge(b, min = -1, max = 50,
+  label = update,
+  gaugeSectors(
+  success = c(0,10), 
+  warning = c(11,20), 
+  danger = c(21,50)))
+```
+
+
+### Chart 
+
+```{r, echo=FALSE}
+scatter
+```
+
+===========================================================
+
+```{r, echo=FALSE}
+
+sd_distb_map <- covid_data1 %>% 
+  leaflet(width = "100%") %>% 
+  addTiles() %>% 
+  addMarkers(lat = ~Latitude, 
+             lng = ~Longitude, 
+             popup = ~City)
+
+distb_table <- datatable(covid_data1, extensions="Scroller", style="bootstrap",
+                         class="compact",
+                          width="100%", options=list(deferRender=TRUE, scrollY=300, scroller=TRUE))
+```
+
+Row {data-width="66%"}
+-----------------
+###
+
+```{r, echo=FALSE}
+sd_distb_map
+```
+
+###
+
+```{r, echo=FALSE}
+distb_table
+```
+
+Resources
+=============================================================
+
+Column {data-width="66%"}
+-------------------------------------------------------------
+
+#### For more information/tutorial please see
+
+- `Package` [documentation](https://pkgs.rstudio.com/flexdashboard/index.html)
+- Workshop from Duke University [Repo](https://github.com/libjohn/workshop_flexdashboards) 
+- Medium Blog [documentation](https://towardsdatascience.com/building-an-hr-dashboard-in-r-using-flexdashboard-76d14ed3f32) 
+- `Code` is available here [Repo](https://github.com/clfee/Shiny-apps). 
