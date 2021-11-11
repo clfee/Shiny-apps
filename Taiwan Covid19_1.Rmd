@@ -2,7 +2,7 @@
 title: "Taiwan Covid19 Status"
 output: 
   flexdashboard::flex_dashboard:
-    logo: C:\Users\quicl\Desktop\sales_analytics\Projects\not_shiny\publish\Crosstalk\Pic.JPG
+    logo: C:\Users\publish\Crosstalk\Pic.JPG
     orientation: columns
     vertical_layout: fill
 ---
