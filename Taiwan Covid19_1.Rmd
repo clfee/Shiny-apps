@@ -39,7 +39,7 @@ df  <- read.csv(url, encoding="UTF-8", stringsAsFactors=FALSE)
 
 cities <- read.csv('cityx.csv', encoding="UTF-8", stringsAsFactors=FALSE) %>% 
           mutate(Area = ifelse( Longitude > 121.5, 'E', 
-                        ifelse((Latitude > median(Latitude) & Longitude < 121.5), 'SW','NW')))%>%     
+                        ifelse((Latitude < median(Latitude) & Longitude < 121.5), 'SW','NW')))%>%     
           group_by(Area) %>%
           mutate(Area_Latitude = min(Latitude))%>%
           mutate(Area_Longitude = min(Longitude))
